@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SentinelAI — Governed Agent Simulator</title>
+  <link rel="stylesheet" href="/agent-ui.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Governed Agent Simulator</h1>
+      <p>Real <code>fetch()</code> calls to <strong>POST /tool/intercept</strong> — same pattern as a production agent frontend</p>
+    </div>
+    <div class="header-actions">
+      <a class="nav-link" href="/chat">Agent chat (Cerebras)</a>
+      <span class="badge" id="apiBadge">Checking API…</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="panel" id="scenarioPanel">
+      <div class="section-label">Scenarios</div>
+      <div id="scenarioList"></div>
+      <div class="actions">
+        <button class="primary" id="runAllBtn" type="button">Run all</button>
+        <button class="secondary" id="clearBtn" type="button">Clear</button>
+      </div>
+    </aside>
+
+    <main class="panel">
+      <div class="section-label">Agent runtime</div>
+      <div class="agent-card" id="agentCard">
+        <h2 id="agentTitle">Select a scenario</h2>
+        <div class="meta" id="agentMeta">—</div>
+        <div class="goal" id="agentGoal">Each tool call asks SentinelAI before execution.</div>
+      </div>
+      <ul class="timeline" id="timeline"></ul>
+      <div id="resultBanner"></div>
+    </main>
+
+    <aside class="panel">
+      <div class="section-label">API inspector</div>
+      <p class="code-note">
+        Browser calls <code>/api/governance/*</code> (local proxy for CORS). The request/response below match
+        what you would send to production <code id="apiUrlDisplay">…</code>.
+      </p>
+      <div class="api-box">
+        <header><span class="method">POST</span><span class="url" id="reqUrl">/tool/intercept</span></header>
+        <pre id="reqBody">{}</pre>
+      </div>
+      <div class="api-box">
+        <header>Response <span id="resStatus"></span></header>
+        <pre id="resBody">{}</pre>
+      </div>
+      <div class="section-label" style="margin-top:1rem">Integration snippet</div>
+      <pre class="api-box" style="border:none"><code id="snippet" style="font-size:0.68rem;color:#c9d4e3">await fetch(API + '/tool/intercept', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ context: { agent_id, session_id, tool_name, ... } })
+})</code></pre>
+    </aside>
+
+    <div class="log-bar" id="statusBar">Load scenarios…</div>
+  </div>
+
+  <script type="module">
+    import {
+      GovernedAgentClient,
+      fetchAgents,
+      loadScenarios,
+      pingApi,
+      formatJson,
+    } from './agent-client.js';
+
+    let apiBase = '';
+    let scenarios = [];
+    let agentsByName = {};
+    let running = false;
+    let activeKey = null;
+
+    const els = {
+      scenarioList: document.getElementById('scenarioList'),
+      timeline: document.getElementById('timeline'),
+      reqUrl: document.getElementById('reqUrl'),
+      reqBody: document.getElementById('reqBody'),
+      resBody: document.getElementById('resBody'),
+      resStatus: document.getElementById('resStatus'),
+      agentTitle: document.getElementById('agentTitle'),
+      agentMeta: document.getElementById('agentMeta'),
+      agentGoal: document.getElementById('agentGoal'),
+      resultBanner: document.getElementById('resultBanner'),
+      statusBar: document.getElementById('statusBar'),
+      apiBadge: document.getElementById('apiBadge'),
+      apiUrlDisplay: document.getElementById('apiUrlDisplay'),
+      runAllBtn: document.getElementById('runAllBtn'),
+      clearBtn: document.getElementById('clearBtn'),
+    };
+
+    function expClass(exp) {
+      if (exp === 'allow') return 'exp-allow';
+      if (exp === 'deny') return 'exp-deny';
+      if (exp === 'require_hitl') return 'exp-hitl';
+      return 'exp-block';
+    }
+
+    function clearUi() {
+      els.timeline.innerHTML = '';
+      els.resultBanner.innerHTML = '';
+      els.reqBody.textContent = '{}';
+      els.resBody.textContent = '{}';
+      els.resStatus.textContent = '';
+    }
+
+    function appendTimeline(text, cls) {
+      const li = document.createElement('li');
+      li.className = cls || '';
+      li.textContent = text;
+      els.timeline.appendChild(li);
+      li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
+    function onAgentEvent(ev) {
+      if (ev.kind === 'api_request') {
+        els.reqUrl.textContent = ev.url.replace(apiBase, '').startsWith('/') ? ev.url : ev.url;
+        els.reqBody.textContent = formatJson(ev.body);
+        appendTimeline(`POST ${ev.url}`, 'api');
+      }
+      if (ev.kind === 'api_response') {
+        els.resStatus.textContent = `HTTP ${ev.status}`;
+        els.resBody.textContent = formatJson(ev.body);
+      }
+      if (ev.kind === 'agent_intent') appendTimeline('→ ' + ev.message, 'req');
+      if (ev.kind === 'governance') {
+        appendTimeline(`← ${(ev.disposition || '').toUpperCase()} — ${ev.message}`, 'gov');
+      }
+      if (ev.kind === 'executed') appendTimeline('✓ ' + ev.message, 'exec');
+      if (ev.kind === 'stopped' || ev.kind === 'hitl') appendTimeline('✓ ' + ev.message, 'stop');
+      if (ev.kind === 'result') {
+        const cls = ev.passed ? 'pass' : 'fail';
+        els.resultBanner.innerHTML =
+          `<div class="result-banner ${cls}">` +
+          (ev.passed ? 'PASS' : 'CHECK') +
+          ` — expected ${ev.expected}, actual ${ev.actual}<br>` +
+          `<small style="font-weight:400">Session: ${ev.session_id}</small></div>`;
+      }
+    }
+
+    async function runScenario(sc) {
+      const agent = agentsByName[sc.agent];
+      if (!agent) throw new Error(`Agent not found: ${sc.agent}`);
+
+      activeKey = sc.key;
+      document.querySelectorAll('.scenario-btn').forEach((b) => {
+        b.classList.toggle('active', b.dataset.key === sc.key);
+      });
+
+      els.agentTitle.textContent = sc.agent;
+      els.agentMeta.textContent = `agent_id: ${agent.agent_id} · expected: ${sc.expected}`;
+      els.agentGoal.textContent = sc.description;
+      clearUi();
+
+      const client = new GovernedAgentClient({
+        apiBase,
+        agentId: agent.agent_id,
+        agentName: sc.agent,
+        onEvent: onAgentEvent,
+      });
+
+      return client.runSteps(sc.steps || [], sc.expected);
+    }
+
+    async function runOne(key) {
+      if (running) return;
+      const sc = scenarios.find((s) => s.key === key);
+      if (!sc) return;
+      running = true;
+      els.runAllBtn.disabled = true;
+      els.statusBar.textContent = `Running: ${sc.title}…`;
+      try {
+        const r = await runScenario(sc);
+        els.statusBar.textContent = `${sc.title}: ${r.passed ? 'PASSED' : 'CHECK'} (actual=${r.actual})`;
+      } catch (err) {
+        appendTimeline('ERROR: ' + err.message, 'stop');
+        els.statusBar.textContent = 'Error: ' + err.message;
+      } finally {
+        running = false;
+        els.runAllBtn.disabled = false;
+      }
+    }
+
+    async function runAll() {
+      if (running) return;
+      running = true;
+      els.runAllBtn.disabled = true;
+      let passed = 0;
+      for (const sc of scenarios) {
+        els.statusBar.textContent = `Running ${passed}/${scenarios.length}… ${sc.title}`;
+        try {
+          const r = await runScenario(sc);
+          if (r.passed) passed++;
+        } catch {
+          /* continue */
+        }
+      }
+      els.statusBar.textContent = `All scenarios: ${passed}/${scenarios.length} PASSED`;
+      running = false;
+      els.runAllBtn.disabled = false;
+    }
+
+    function renderScenarios() {
+      els.scenarioList.innerHTML = '';
+      for (const sc of scenarios) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'scenario-btn';
+        btn.dataset.key = sc.key;
+        btn.innerHTML =
+          `<span class="exp ${expClass(sc.expected)}">${sc.expected}</span>` +
+          `<strong>${sc.title}</strong>` +
+          `<small>${sc.agent}</small>`;
+        btn.onclick = () => runOne(sc.key);
+        els.scenarioList.appendChild(btn);
+      }
+    }
+
+    async function init() {
+      try {
+        const [scData, ping] = await Promise.all([loadScenarios(), pingApi()]);
+        apiBase = scData.default_api || '';
+        scenarios = scData.scenarios || [];
+        els.apiUrlDisplay.textContent = apiBase;
+
+        if (ping.ok) {
+          els.apiBadge.textContent = `API online · ${ping.agent_count} agents`;
+          els.apiBadge.classList.add('ok');
+          const agents = await fetchAgents(apiBase);
+          agentsByName = Object.fromEntries(agents.map((a) => [a.name, a]));
+        } else {
+          els.apiBadge.textContent = 'API offline';
+          els.apiBadge.classList.add('bad');
+        }
+
+        renderScenarios();
+        els.statusBar.textContent = `${scenarios.length} scenarios · click to run · each step calls POST /tool/intercept`;
+      } catch (err) {
+        els.statusBar.textContent = 'Failed to init: ' + err.message;
+        els.apiBadge.textContent = 'Error';
+        els.apiBadge.classList.add('bad');
+      }
+    }
+
+    els.runAllBtn.onclick = runAll;
+    els.clearBtn.onclick = clearUi;
+    init();
+  </script>
+</body>
+</html>

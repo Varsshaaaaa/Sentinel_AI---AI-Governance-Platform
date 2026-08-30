@@ -1,0 +1,41 @@
+apiVersion: sentinelai.io/v1
+kind: Policy
+metadata:
+  name: base-enterprise-policy
+  description: Base enterprise governance policy inherited by all agents
+spec:
+  rules:
+    - name: confidential-read-audit
+      priority: 50
+      when:
+        all:
+          - context.action_type: read
+          - context.session_data_classification: confidential
+      then:
+        action: audit_only
+        reason: "Confidential read logged for audit"
+
+    - name: log-internal-reads
+      priority: 10
+      when:
+        all:
+          - context.action_type: read
+      then:
+        action: allow
+        reason: "Read operations allowed"
+
+    - name: deep-delegation-block
+      priority: 350
+      when:
+        - context.delegation_depth >=: 2
+      then:
+        action: block
+        reason: "Agent delegation chain exceeds maximum depth"
+
+    - name: critical-session-suspend
+      priority: 450
+      when:
+        - context.previous_violations_in_session >=: 5
+      then:
+        action: suspend_session
+        reason: "Session suspended after 5 violations (enterprise threshold)"

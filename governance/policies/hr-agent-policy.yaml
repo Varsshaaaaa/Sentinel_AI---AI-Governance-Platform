@@ -1,0 +1,53 @@
+apiVersion: sentinelai.io/v1
+kind: Policy
+metadata:
+  name: hr-agent-policy
+  description: HR agent — PHI/HIPAA strict controls
+spec:
+  inherits: base-enterprise-policy
+  rules:
+    - name: phi-hipaa-strict
+      priority: 300
+      when:
+        - context.session_data_classification: PHI
+      then:
+        action: require_hitl
+        reason: "PHI access requires HIPAA-level human review"
+
+    - name: pii-warning
+      priority: 200
+      when:
+        - context.session_data_classification: PII
+      then:
+        action: warn
+        reason: "PII access flagged for review"
+
+    - name: bulk-phi-block
+      priority: 350
+      when:
+        all:
+          - context.session_data_classification: PHI
+          - context.data_scope_size >: 10
+      then:
+        action: block
+        reason: "Bulk PHI access blocked under HIPAA controls"
+
+    - name: hr-write-hitl
+      priority: 180
+      when:
+        all:
+          - context.tool_name: hr_records
+          - context.action_type: write
+      then:
+        action: require_hitl
+        reason: "Employee record modification requires HR approval"
+
+    - name: benefits-export-hitl
+      priority: 140
+      when:
+        all:
+          - context.tool_name: benefits_lookup
+          - context.data_scope_size >: 200
+      then:
+        action: require_hitl
+        reason: "Large benefits data export requires approval"

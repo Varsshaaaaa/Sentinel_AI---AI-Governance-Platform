@@ -1,0 +1,39 @@
+apiVersion: sentinelai.io/v1
+kind: Policy
+metadata:
+  name: developer-agent-policy
+  description: Engineering agent — production and external API guardrails
+spec:
+  inherits: base-enterprise-policy
+  rules:
+    - name: prod-api-write-block
+      priority: 250
+      when:
+        all:
+          - context.tool_name: api_call
+          - context.action_type: write
+          - context.tool_params.environment: production
+      then:
+        action: block
+        reason: "Production write API calls blocked for developer agent"
+
+    - name: external-api-hitl
+      priority: 120
+      when:
+        all:
+          - context.tool_name: api_call
+          - context.tool_params.url:
+              matches: "(?i)external|thirdparty|vendor"
+      then:
+        action: require_hitl
+        reason: "External API call requires engineering review"
+
+    - name: code-delete-block
+      priority: 300
+      when:
+        all:
+          - context.tool_name: code_search
+          - context.action_type: delete
+      then:
+        action: block
+        reason: "Code deletion not permitted via search tool"

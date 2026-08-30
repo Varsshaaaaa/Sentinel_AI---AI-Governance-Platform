@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.env
+*.pem
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Infrastructure build artifacts
+infrastructure/build/
+
+# Terraform local state (remote state in S3)
+infrastructure/terraform/.terraform/
+infrastructure/terraform/*.tfstate
+infrastructure/terraform/*.tfstate.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+~$*.xlsx
+
+# Local data
+data/local/
+*.log
+
+# Generated test outputs (regenerate via run_governance_suite.py)
+reports/csv/
+reports/sentinelai_100_cases.xlsx
+
+# AWS SAM
+.aws-sam/

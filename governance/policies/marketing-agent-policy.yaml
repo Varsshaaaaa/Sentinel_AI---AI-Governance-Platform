@@ -1,0 +1,46 @@
+apiVersion: sentinelai.io/v1
+kind: Policy
+metadata:
+  name: marketing-agent-policy
+  description: Marketing analytics — PII segmentation and export controls
+spec:
+  inherits: base-enterprise-policy
+  rules:
+    - name: pii-segment-hitl
+      priority: 220
+      when:
+        all:
+          - context.session_data_classification: PII
+          - context.data_scope_size >: 100
+      then:
+        action: require_hitl
+        reason: "Large PII segment export requires marketing compliance approval"
+
+    - name: bulk-analytics-hitl
+      priority: 180
+      when:
+        all:
+          - context.tool_name: analytics_query
+          - context.data_scope_size >: 1000
+      then:
+        action: require_hitl
+        reason: "Bulk analytics export requires data governance approval"
+
+    - name: cross-dataset-block
+      priority: 280
+      when:
+        all:
+          - context.tool_name: analytics_query
+          - context.tool_params.target_dataset: employee_records
+      then:
+        action: block
+        reason: "Marketing agent cannot query HR employee records"
+
+    - name: marketing-write-audit
+      priority: 60
+      when:
+        all:
+          - context.action_type: write
+      then:
+        action: audit_only
+        reason: "Marketing write operations logged for audit"

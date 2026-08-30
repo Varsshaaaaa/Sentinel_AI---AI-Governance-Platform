@@ -1,0 +1,47 @@
+apiVersion: sentinelai.io/v1
+kind: Policy
+metadata:
+  name: support-agent-policy
+  description: Customer support agent — external email HITL
+spec:
+  inherits: base-enterprise-policy
+  rules:
+    - name: external-email-hitl
+      priority: 150
+      when:
+        all:
+          - context.tool_name: email_send
+          - context.tool_params.to_domain external: [company.com, internal.local]
+      then:
+        action: require_hitl
+        reason: "External email requires human approval"
+
+    - name: internal-email-allow
+      priority: 50
+      when:
+        all:
+          - context.tool_name: email_send
+      then:
+        action: allow
+        reason: "Internal email allowed"
+
+    - name: bulk-crm-hitl
+      priority: 120
+      when:
+        all:
+          - context.tool_name: crm_read
+          - context.data_scope_size >: 500
+      then:
+        action: require_hitl
+        reason: "Bulk CRM export requires supervisor approval"
+
+    - name: suspicious-link-block
+      priority: 250
+      when:
+        all:
+          - context.tool_name: email_send
+          - context.tool_params.body:
+              matches: "(?i)(password|ssn|credit.?card)"
+      then:
+        action: block
+        reason: "Email body contains sensitive data patterns"

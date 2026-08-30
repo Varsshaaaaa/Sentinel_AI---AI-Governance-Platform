@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SentinelAI — Governed Agent Chat</title>
+  <link rel="stylesheet" href="/agent-ui.css" />
+</head>
+<body class="chat-page">
+  <header>
+    <div>
+      <h1>Governed Agent Chat</h1>
+      <p><strong>Cerebras</strong> routes your request to the right agent and runs tools through <code>POST /tool/intercept</code></p>
+    </div>
+    <div class="header-actions">
+      <a class="nav-link" href="/">Scenario simulator</a>
+      <span class="badge" id="apiBadge">Checking API…</span>
+      <span class="badge" id="llmBadge">Checking LLM…</span>
+    </div>
+  </header>
+
+  <div class="chat-layout">
+    <aside class="panel chat-sidebar">
+      <div class="section-label">Try asking</div>
+      <div id="exampleChips" class="chips"></div>
+
+      <div class="section-label deny-label" style="margin-top:1.25rem">Expect block / deny</div>
+      <div id="denyChips" class="chips"></div>
+
+      <div class="section-label hitl-label" style="margin-top:1rem">Expect approval (HITL)</div>
+      <div id="hitlChips" class="chips"></div>
+
+      <div class="section-label" style="margin-top:1.25rem">Session</div>
+      <p class="session-meta"><code id="sessionId">—</code></p>
+      <button class="secondary full-width" id="newSessionBtn" type="button">New session</button>
+    </aside>
+
+    <main class="panel chat-main">
+      <ul class="chat-messages" id="chatMessages"></ul>
+      <form class="chat-composer" id="chatForm">
+        <textarea
+          id="chatInput"
+          rows="2"
+          placeholder="Ask anything — payments, emails, HR records, code search…"
+          autocomplete="off"
+        ></textarea>
+        <button class="primary" id="sendBtn" type="submit">Send</button>
+      </form>
+    </main>
+
+    <aside class="panel chat-trace">
+      <div class="section-label">Governance trace</div>
+      <p class="code-note">Routing decision, tool call, and intercept result for the latest turn.</p>
+      <div id="traceEmpty" class="trace-empty">Send a message to see Cerebras → agent → governance flow.</div>
+      <div id="traceContent" hidden>
+        <div class="trace-step" id="traceRoute"></div>
+        <div class="trace-step" id="traceIntent"></div>
+        <div class="api-box">
+          <header><span class="method">POST</span><span class="url">/tool/intercept</span></header>
+          <pre id="traceRequest">{}</pre>
+        </div>
+        <div class="api-box">
+          <header>Disposition <span id="traceDisposition"></span></header>
+          <pre id="traceResponse">{}</pre>
+        </div>
+      </div>
+    </aside>
+
+    <div class="log-bar" id="statusBar">Loading…</div>
+  </div>
+
+  <script type="module" src="/chat-ui.js"></script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+apiVersion: sentinelai.io/v1
+kind: Policy
+metadata:
+  name: finance-agent-policy
+  description: Finance agent governance — bulk delete and after-hours controls
+spec:
+  inherits: base-enterprise-policy
+  rules:
+    - name: bulk-delete-block
+      priority: 200
+      when:
+        all:
+          - context.action_type: delete
+          - context.data_scope_size >: 100
+      then:
+        action: block
+        reason: "Bulk delete exceeds 100 record limit"
+
+    - name: after-hours-write-hitl
+      priority: 100
+      when:
+        all:
+          - context.timestamp.hour outside: [9, 18]
+          - context.action_type in: [write, delete]
+      then:
+        action: require_hitl
+        reason: "Data modification outside business hours requires approval"
+
+    - name: violation-suspend
+      priority: 400
+      when:
+        - context.previous_violations_in_session >=: 3
+      then:
+        action: suspend_session
+        reason: "Session suspended after 3 violations"
+
+    - name: high-scope-confidential-hitl
+      priority: 150
+      when:
+        all:
+          - context.session_data_classification: confidential
+          - context.data_scope_size >: 50
+      then:
+        action: require_hitl
+        reason: "Large confidential financial export requires approval"
+
+    - name: payment-amount-hitl
+      priority: 180
+      when:
+        all:
+          - context.tool_name: payment_process
+          - context.data_scope_size >: 10000
+      then:
+        action: require_hitl
+        reason: "High-value payment requires finance approval"
