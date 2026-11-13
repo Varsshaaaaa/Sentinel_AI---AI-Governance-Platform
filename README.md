@@ -16,11 +16,11 @@ Observe → Analyze Behavior → Evaluate Policies → Take Governance Action �
 Agent → POST /v1/tool/intercept
   → Governance hold check
   → Decision Auditor (log)
-  → Agent WAF (PS-5.1)
-  → Dynamic Policy Engine (PS-10.2)
-  → Action Guardrails (PS-3.1)
-  → Graph / Risk / EventBridge (PS-4.2, PS-1.3)
-  → Decision Replay audit trail (PS-7.1)
+  → Agent WAF 
+  → Dynamic Policy Engine 
+  → Action Guardrails 
+  → Graph / Risk / EventBridge 
+  → Decision Replay audit trail 
 ```
 
 **Stack:** Python 3.11 · FastAPI · AWS Lambda · DynamoDB · EventBridge · React · YAML policies · Cerebras (Agent Chat) · LiteLLM (Policy Copilot)
